@@ -1,7 +1,8 @@
 # %%
 from typing import Optional
 from typing import List
-
+import sys
+import csv
 import nest_asyncio
 import pandas as pd
 from gremlin_python.driver.aiohttp.transport import AiohttpTransport
@@ -65,10 +66,9 @@ print("WithOptions: " + str(list(filter(lambda x: not str(x).startswith("_"), di
 
 
 # %%
-cpg_df = pd.read_csv("data/Cpgs.csv", index_col=0)
-article_df = pd.read_csv("data/Articles.csv", index_col=0)
-assoc_df = pd.read_csv("data/Associations.csv", index_col=0)
-# assoc_df
+cpg_df = pd.read_csv("../data/Cpgs.csv", index_col=0)
+article_df = pd.read_csv("../data/Articles.csv", index_col=0)
+assoc_df = pd.read_csv("../data/Associations.csv", index_col=0)
 
 
 # %%
@@ -374,6 +374,28 @@ cpg_names_input_test = ["cg24115571", "cg26498966", "cg13181537", "cg01261464"]
 cpg_group_name_test = "Nicole's Favorite Sleep-Related CpGs"
 fav_sleep_cpgs = create_cpg_group(g, cpg_names_input_test, cpg_group_name_test)
 print(fav_sleep_cpgs)
+
+
+# %% Accept and use command-line arguments to access cpg file & group_name inputs from the frontend:
+
+def main():
+    file_path = sys.argv[1]
+    group_name = sys.argv[2]
+
+    cpg_names = []
+
+    # Read the file and extract the first column values
+    with open(file_path, 'r') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            cpg_names.append(row[0])
+
+    result = create_cpg_group(g, cpg_names, group_name)
+    print(result)
+
+
+if __name__ == '__main__':
+    main()
 
 
 # %% Testing queries learned from book:
