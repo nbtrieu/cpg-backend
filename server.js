@@ -20,21 +20,31 @@ app.use(express.json()); // Middleware to parse JSON requests
 
 function parseCSV(fileBuffer) {
   return new Promise((resolve, reject) => {
-    const results = [];
+    const results = []; // array containing cpg names from csv file
     const bufferStream = new stream.PassThrough();
     bufferStream.end(fileBuffer);
     bufferStream.pipe(csv())
-      .on('data', (data) => results.push(Object.values(data)[0]))  // extracting first column
+      .on('data', (data) => {
+        const value = Object.values(data)[0];
+        console.log("Parsed Value:", value); // Log each parsed value
+        results.push(value);  // extracting first column
+      })
       .on('end', () => {
-          resolve(results);
+        console.log("Final Parsed Data:", results); // Log the final results
+        resolve(results);
       })
       .on('error', (err) => reject(err));
   });
 }
 
 function runPythonScript(scriptPath, args, callback) {
-  const pythonProcess = spawn('python', [scriptPath, ...args]);
+  const pythonProcess = spawn('python3', [scriptPath, ...args]);
   let results = '';
+  let errors = '';
+
+  pythonProcess.stderr.on('data', (data) => {
+    errors += data.toString();
+  });
 
   pythonProcess.stdout.on('data', (data) => {
     results += data.toString();
@@ -42,47 +52,52 @@ function runPythonScript(scriptPath, args, callback) {
 
   pythonProcess.on('close', (code) => {
     if (code !== 0) {
-        callback({ error: 'Failed to run script' }, null);
+        callback({ error: 'Failed to run script', details: errors  }, null);
     } else {
-        callback(null, JSON.parse(results));
+      console.log('>>> results before parsing: ', results)  
+      try {
+        const parsedResults = JSON.parse(results);
+        callback(null, parsedResults);
+      } catch (err) {
+          callback({ error: 'Failed to parse script output as JSON', details: results }, null);
+      }
     }
   });
+  
+  pythonProcess.on('error', (error) => {
+    callback({ error: 'Error spawning python process', details: error.message }, null);
+  });
+  
 }
 
-app.post('/run-import-cpg-data', upload.single('cpgFile'), (req, res) => {
+app.post('/run-create-cpg-group', upload.single('cpgFile'), async (req, res) => {
   try {
     // Access the uploaded file
-    const file = req.file;
-    console.log(file.originalname); // name of the uploaded file
-    console.log(file.buffer);      // file contents as a buffer
+    const fileBuffer = req.file.buffer;
+
+    // Parse CSV
+    const parsedData = await parseCSV(fileBuffer);
+    console.log("Parsed Data:", parsedData);  // This should log the array of strings
 
     // Access the group name
     const groupName = req.body.groupName;
-    console.log(groupName);
 
-    // Save the file temporarily
-    const tempFilePath = path.join(__dirname, 'temp', file.originalname);
-    fs.writeFileSync(tempFilePath, file.buffer);
+    // Since an array cannot be sent directly as a command-line argument, 
+    // we need to stringify the array before passing it to Python.
+    const args = [JSON.stringify(parsedData), groupName];
 
-    // Call the Python script
-    // runPythonScript('./scripts/import-cgp-data.py', [tempFilePath, groupName], (err, data) => {
-    //   // After processing, delete the temporary file
-    //   fs.unlinkSync(tempFilePath);
-
-    //   if (err) {
-    //     return res.status(500).json(err);
-    //   }
-    //   res.json(data);
-    // });
-
-    res.status(200).send("Data processed successfully");
-    console.log("Sent response to frontend");
-    
-} catch (err) {
-    console.error(err);
-    res.status(500).send("Internal Server Error");
-}
+    runPythonScript('./scripts/create_cpg_group.py', args, (err, data) => {
+        if (err) {
+            return res.status(500).json(err);
+        }
+        res.json(data);
+    });
+  } catch (err) {
+      console.error(err);
+      res.status(500).send("Internal Server Error");
+  }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
